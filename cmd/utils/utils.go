@@ -8,8 +8,20 @@ import (
 	"regexp"
 	"strings"
 
+	"internal/apiclient"
+	"internal/client/kvm"
 	"internal/clilog"
 )
+
+// Checks if a specific KVM is present in the list of KVMs.
+func IfListContainsKVM(refKVMList []byte, kvm string) bool {
+	for _, v := range refKVMList {
+		if string(v) == kvm {
+			return true
+		}
+	}
+	return false
+}
 
 func ListKVMFiles(folder string) (orgKVMFileList map[string]string,
 	envKVMFileList map[string]string, proxyKVMFileList map[string]string, err error,
@@ -17,6 +29,10 @@ func ListKVMFiles(folder string) (orgKVMFileList map[string]string,
 	orgKVMFileList = map[string]string{}
 	envKVMFileList = map[string]string{}
 	proxyKVMFileList = map[string]string{}
+
+	var envExistingKVMList []byte
+	var proxyExistingKVMList []byte
+	var orgExistingKVMList []byte
 
 	renv := regexp.MustCompile(`env_(\S*)_kvmfile_[0-9]+\.json`)
 	rorg := regexp.MustCompile(`org_(\S*)_kvmfile_[0-9]+\.json`)
@@ -32,20 +48,42 @@ func ListKVMFiles(folder string) (orgKVMFileList map[string]string,
 			case renv.MatchString(kvmFile):
 				envKVMFileSplit := strings.Split(kvmFile, "_")
 				if len(envKVMFileSplit) > 2 {
-					clilog.Info.Printf("Map name %s, path %s\n", envKVMFileSplit[2], kvmFile)
-					envKVMFileList[envKVMFileSplit[2]] = path
+					apiclient.SetApigeeEnv(envKVMFileSplit[1])
+					if envExistingKVMList, err = kvm.List(""); err != nil {
+						return err
+					}
+					if IfListContainsKVM(envExistingKVMList, envKVMFileSplit[2]) {
+						clilog.Debug.Printf("Skipping addition of Map name %s, path %s to the KVMList\n", envKVMFileSplit[2], kvmFile)
+					} else {
+						clilog.Info.Printf("Map name %s, path %s\n", envKVMFileSplit[2], kvmFile)
+						envKVMFileList[envKVMFileSplit[2]] = path
+					}
 				}
 			case rproxy.MatchString(kvmFile):
 				proxyKVMFileSplit := strings.Split(kvmFile, "_")
 				if len(proxyKVMFileSplit) > 2 {
-					clilog.Info.Printf("Map name %s, path %s\n", proxyKVMFileSplit[2], kvmFile)
-					proxyKVMFileList[proxyKVMFileSplit[2]] = path
+					if proxyExistingKVMList, err = kvm.List(proxyKVMFileSplit[1]); err != nil {
+						return err
+					}
+					if IfListContainsKVM(proxyExistingKVMList, proxyKVMFileSplit[2]) {
+						clilog.Debug.Printf("Skipping addition of Map name %s, path %s to the KVMList\n", proxyKVMFileSplit[2], kvmFile)
+					} else {
+						clilog.Info.Printf("Map name %s, path %s\n", proxyKVMFileSplit[2], kvmFile)
+						proxyKVMFileList[proxyKVMFileSplit[2]] = path
+					}
 				}
 			case rorg.MatchString(kvmFile):
 				orgKVMFileSplit := strings.Split(kvmFile, "_")
 				if len(orgKVMFileSplit) > 1 {
-					clilog.Info.Printf("Map name %s, path %s\n", orgKVMFileSplit[1], kvmFile)
-					orgKVMFileList[orgKVMFileSplit[1]] = path
+					if orgExistingKVMList, err = kvm.List(""); err != nil {
+						return err
+					}
+					if IfListContainsKVM(orgExistingKVMList, orgKVMFileSplit[1]) {
+						clilog.Debug.Printf("Skipping addition of Map name %s, path %s to the KVMList\n", orgKVMFileSplit[1], kvmFile)
+					} else {
+						clilog.Info.Printf("Map name %s, path %s\n", orgKVMFileSplit[1], kvmFile)
+						orgKVMFileList[orgKVMFileSplit[1]] = path
+					}
 				}
 			}
 		}
